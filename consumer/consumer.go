@@ -1,25 +1,38 @@
-package main
+package consumer
 
 import (
-	"context"
 	"fmt"
-	"time"
+	"os"
 
-	"github.com/segmentio/kafka-go"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func main() {
-	conn, _ := kafka.DialLeader(context.Background(), "tcp", "localhost:9092", "topics_test", 0)
-	conn.SetReadDeadline(time.Now().Add(time.Second * 8))
+func Consumer() {
+	topic := "HVSE"
+	go func() {
+		// consumer code
+		// seperate groupID for multiple consumer readings from producer
+		consumer, _ := kafka.NewConsumer(&kafka.ConfigMap{
+			"bootstrap.servers": "localhost:9092",
+			"group.id":          "foo",
+			"auto.offset.reset": "smallest"})
 
-	batch := conn.ReadBatch(1e3, 1e9)
-	bytes := make([]byte, 1e3)
-
-	for {
-		_, err := batch.Read(bytes)
+		err := consumer.SubscribeTopics([]string{topic}, nil)
 		if err != nil {
-			break
+			fmt.Printf("Failed to subscribe to topic: %s\n", err)
+			os.Exit(1)
 		}
-		fmt.Println(string(bytes))
-	}
+
+		for {
+			ev := consumer.Poll(100)
+			switch e := ev.(type) {
+			case *kafka.Message:
+				fmt.Printf("%% Message on %s:\n%s\n",
+					e.TopicPartition, string(e.Value))
+			case kafka.Error:
+				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+			}
+		}
+	}()
+	return
 }
